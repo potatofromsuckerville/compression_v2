@@ -29,32 +29,22 @@ char *change_ext(char *buffer) {
     return new_name;
     }
 
-int main(int argc, char **argv) {
+void compress(char *file_name) {
     FILE *f;
-    f = fopen(argv[1], "rb");
+    f = fopen(file_name, "rb");
     if (!f) {
         perror("Failed to open file");
-        return -1;
+        return;
         }
-        
-    uint32_t len = strlen(argv[1]);
-
-    char *buffer = NULL;    
-    buffer = malloc(len);
+    char *new_name = change_ext(file_name);
+    printf("%s \n", new_name);
     
-    if (!buffer) {
-        perror("Memory allocation failed");
-        fclose(f);
-        return -1;
-        }    
-    
-    strcpy(buffer, argv[1]);
-    char *file_name = change_ext(buffer);
-    printf("%s \n", file_name);
-    
-    free(buffer);
-    free(file_name);
+    free(new_name);
     fclose(f);
+    }
+
+int main(int argc, char **argv) {
+    compress(argv[1]);
     return 0;
     }
 
