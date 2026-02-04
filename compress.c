@@ -3,11 +3,11 @@
 #include <string.h>
 #include <stdint.h>
 
-#define SYSTEM_ERROR 0
+#define SYSTEM_ERROR -1
+#define ERROR 0
 #define SUCCESS 1
 
-char *change_ext(char *buffer) {
-    const char *new_ext = ".comp";
+char *change_ext(char *buffer, char *new_ext) {
     uint32_t ext_len = strlen(new_ext);
     
     char *ext_start = strrchr(buffer, '.');
@@ -44,7 +44,11 @@ int compress(char *file_name) {
         perror("Failed to open file");
         return SYSTEM_ERROR;
         }
-    char *new_name = change_ext(file_name);
+    char *new_name = change_ext(file_name, ".rle");
+    if (new_name == NULL) {
+        printf("Program Error. \n");
+        return SYSTEM_ERROR;
+        }
     
     compressed = fopen(new_name, "wb");
     if (!compressed) {
@@ -57,25 +61,57 @@ int compress(char *file_name) {
     int count;
     count = 1;
     
+    
     while (1) {
         curr_char = fgetc(original);
+        if (curr_char == EOF) break;
         if ((curr_char == prev_char)) {
             prev_char = curr_char;
             count++;
-            continue;
-            }        
-        
-        count = 1;
-        break;
+            }
+        else {
+            fwrite(&count, sizeof(int), 1, compressed);
+            fwrite(&prev_char, sizeof(char), 1, compressed);
+            prev_char = curr_char;
+            count = 1;
+            }
         }
+    
     free(new_name);
     fclose(original);
     return SUCCESS;
     }
 
-int main(int argc, char **argv) {
-    int compress_file = compress(argv[1]);
-    if (compress_file) printf("Success! \n");
-    return 0;
+int view(char *file_name) {
+    FILE *f = fopen(file_name, "rb");
+    if (!f) {
+        perror("Failed to open file");
+        return SYSTEM_ERROR;
+        }
+    int count;
+    char characters;
+    
+    while (fread(&count, sizeof(int), 1, f)) {
+        fread(&characters, sizeof(char), 1, f);
+        printf("%d%c", count, characters);
+        }
+    printf("\n");
+    return SUCCESS;
     }
 
+int main(int argc, char **argv) {
+    int compress_file, view_file;
+    if (strcmp(argv[1], "compress") == 0) {
+        compress_file = compress(argv[2]);
+        if (compress_file) printf("Success! \n");
+        else printf("Failure! \n");
+        }
+
+    else if (strcmp(argv[1], "view") == 0) {
+        view_file = view(argv[2]);
+        if (view_file) printf("Success! \n");
+        else printf("Failure! \n");        
+        }
+    
+    return 0;
+    }
