@@ -4,15 +4,15 @@
 #include <stdint.h>
 
 #define SYSTEM_ERROR -1
-#define ERROR 0
+#define USER_ERROR 0
 #define SUCCESS 1
 
-char *change_ext(char *buffer, char *new_ext) {
+char *change_ext(char *file_name, char *new_ext) { /* caller must free after use */
     uint32_t ext_len = strlen(new_ext);
     
-    char *ext_start = strrchr(buffer, '.');
+    char *ext_start = strrchr(file_name, '.');
     
-    int index = (int)(ext_start - buffer);
+    int index = (int)(ext_start - file_name);
     
     char *new_name = NULL;
     int size = index + ext_len;
@@ -29,38 +29,46 @@ char *change_ext(char *buffer, char *new_ext) {
     int i = 0;
     
     while (i < (index + ext_len)) {
-        if (i < index) new_name[i] = buffer[i];
+        if (i < index) new_name[i] = file_name[i];
         else new_name[i] = new_ext[i - index];
         i++;
-        }    
+        }
     return new_name;
     }
 
 int compress(char *file_name) {
+    int status;
     FILE *original, *compressed;
-    
+         
     original = fopen(file_name, "rb");    
     if (!original) {
         perror("Failed to open file");
-        return SYSTEM_ERROR;
+        status = SYSTEM_ERROR;
+        goto cleanup;
         }
+        
     char *new_name = change_ext(file_name, ".rle");
     if (new_name == NULL) {
         printf("Program Error. \n");
-        return SYSTEM_ERROR;
+        status = SYSTEM_ERROR;
+        goto cleanup;
         }
     
     compressed = fopen(new_name, "wb");
     if (!compressed) {
         perror("Failed to open file");
-        return SYSTEM_ERROR;
+        status = SYSTEM_ERROR;
+        goto cleanup;
         }
+    
+    uint32_t len = strlen(file_name);
+    fwrite(&len, sizeof(uint32_t), 1, compressed);
+    fwrite(file_name, sizeof(char), len, compressed);
     
     char prev_char, curr_char;
     prev_char = fgetc(original);
     int count;
-    count = 1;
-    
+    count = 1;    
     
     while (1) {
         curr_char = fgetc(original);
@@ -76,42 +84,122 @@ int compress(char *file_name) {
             count = 1;
             }
         }
+    cleanup:
+        if (new_name) free(new_name);
+        if (original) fclose(original);
     
-    free(new_name);
-    fclose(original);
-    return SUCCESS;
+    status = SUCCESS;
+    return status;
     }
 
 int view(char *file_name) {
+    int status;
     FILE *f = fopen(file_name, "rb");
     if (!f) {
         perror("Failed to open file");
-        return SYSTEM_ERROR;
+        status = SYSTEM_ERROR;
+        goto cleanup;
         }
+    const char *ext = ".rle";
+    char *ext_check = strrchr(file_name, '.');
+    if (strcmp(ext, ext_check) != 0) {
+        printf("Invalid file format! Can only extract .rle files. \n");
+        status = USER_ERROR;
+        goto cleanup;
+        }
+
     int count;
     char characters;
+
+    fread(&count, sizeof(uint32_t), 1, f);
+    char *original_name = malloc(count + 1);
+    if (!original_name) {
+        perror("Memory allocation failed");
+        status = SYSTEM_ERROR;
+        goto cleanup;
+        }
+    fread(original_name, sizeof(char), count, f);
+    original_name[count] = '\0';
+    printf("File name: %s\n", original_name);
     
     while (fread(&count, sizeof(int), 1, f)) {
         fread(&characters, sizeof(char), 1, f);
         printf("%d%c", count, characters);
         }
+    
     printf("\n");
-    return SUCCESS;
+    cleanup:
+        if (f) fclose(f);
+        if (original_name) free(original_name); 
+    status = SUCCESS;    
+    return status;
+    }
+
+int extract(char *file_name) {
+    int status;
+    const char *ext = ".rle";
+    char *ext_check = strrchr(file_name, '.');
+    if (strcmp(ext, ext_check) != 0) {
+        printf("Invalid file format! Can only view .rle files. \n");
+        return USER_ERROR;
+        }
+    FILE *compressed, *extracted;
+    compressed = fopen(file_name, "rb");
+    if (!compressed) {
+        perror("Failed to open file");
+        status = SYSTEM_ERROR;
+        goto cleanup;
+        }
+    
+    int name_len;
+    fread(&name_len, sizeof(uint32_t), 1, compressed);
+    char *original_file = malloc(name_len + 1);
+    if (!original_file) {
+        perror("Memory allocation failed. \n");
+        status = SYSTEM_ERROR;
+        goto cleanup;
+        }
+    fread(original_file, sizeof(char), name_len, compressed);
+    original_file[name_len] = '\0';
+    extracted = fopen(original_file, "wb");
+    
+    int count;
+    char c;
+    while(fread(&count, sizeof(int), 1, compressed)) {
+        fread(&c, sizeof(char), 1, compressed);
+        while(count > 0) {
+            fwrite(&c, sizeof(char), 1, extracted);
+            count--;
+            }
+        }
+    c = '\n';
+    fwrite(&c, sizeof(char), 1, extracted);
+    cleanup:
+        if (compressed) fclose(compressed);
+        if (extracted) fclose(extracted);
+        if (original_file) free(original_file);
+    status = SUCCESS;
+    return status;
     }
 
 int main(int argc, char **argv) {
-    int compress_file, view_file;
+    int compress_file, view_file, extract_file;
     if (strcmp(argv[1], "compress") == 0) {
         compress_file = compress(argv[2]);
-        if (compress_file) printf("Success! \n");
+        if (compress_file == SUCCESS) printf("Success! \n");
         else printf("Failure! \n");
         }
 
     else if (strcmp(argv[1], "view") == 0) {
         view_file = view(argv[2]);
-        if (view_file) printf("Success! \n");
+        if (view_file == SUCCESS) printf("Success! \n");
         else printf("Failure! \n");        
         }
-    
+    else if (strcmp(argv[1], "extract") == 0) {
+        printf("Extracting... \n");
+        extract_file = extract(argv[2]);
+        if (extract_file == SUCCESS) printf("Success! \n");
+        else if (extract_file == SYSTEM_ERROR) printf("Failure! \n");
+        }
     return 0;
     }
