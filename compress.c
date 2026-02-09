@@ -9,30 +9,28 @@
 
 char *change_ext(char *file_name, char *new_ext) { /* caller must free after use */
     uint32_t ext_len = strlen(new_ext);
+    int stripped_name_len;
     
     char *ext_start = strrchr(file_name, '.');
-    
-    int index = (int)(ext_start - file_name);
+    if (!ext_start) stripped_name_len = (int)strlen(file_name);
+    else stripped_name_len = (int)(ext_start - file_name);
     
     char *new_name = NULL;
-    int size = index + ext_len;
+    int size = stripped_name_len + ext_len + 1;
     new_name = malloc(size);
     if (!new_name) {
-        perror("Memory allocation failed");        
+        perror("Memory allocation failed");
         return NULL;
         }
         
-    int arr_count = (size)/sizeof(new_name[0]);
-    for (int i = 0; i < arr_count; i++) {
-        new_name[i] = '\0';
-        }
     int i = 0;
     
-    while (i < (index + ext_len)) {
-        if (i < index) new_name[i] = file_name[i];
-        else new_name[i] = new_ext[i - index];
+    while (i < size) {
+        if (i < stripped_name_len) new_name[i] = file_name[i];
+        else new_name[i] = new_ext[i - stripped_name_len];
         i++;
         }
+    new_name[size - 1] = '\0';
     return new_name;
     }
 
@@ -65,14 +63,18 @@ int compress(char *file_name) {
     fwrite(&len, sizeof(uint32_t), 1, compressed);
     fwrite(file_name, sizeof(char), len, compressed);
     
-    char prev_char, curr_char;
+    int count, prev_char, curr_char;
     prev_char = fgetc(original);
-    int count;
+    
     count = 1;    
     
     while (1) {
         curr_char = fgetc(original);
-        if (curr_char == EOF) break;
+        if (curr_char == EOF) {
+            fwrite(&count, sizeof(int), 1, compressed);
+            fwrite(&prev_char, sizeof(char), 1, compressed);
+            break;
+            }
         if ((curr_char == prev_char)) {
             prev_char = curr_char;
             count++;
@@ -84,15 +86,17 @@ int compress(char *file_name) {
             count = 1;
             }
         }
+    
+    status = SUCCESS;
     cleanup:
         if (new_name) free(new_name);
         if (original) fclose(original);
+        if (compressed) fclose(compressed);
     
-    status = SUCCESS;
     return status;
     }
 
-int view(char *file_name) {
+int view_encoding(char *file_name) {
     int status;
     FILE *f = fopen(file_name, "rb");
     if (!f) {
@@ -125,13 +129,14 @@ int view(char *file_name) {
     while (fread(&count, sizeof(int), 1, f)) {
         fread(&characters, sizeof(char), 1, f);
         printf("%d%c", count, characters);
-        }
+        }    
     
-    printf("\n");
+    status = SUCCESS;
+    
     cleanup:
         if (f) fclose(f);
         if (original_name) free(original_name); 
-    status = SUCCESS;    
+    
     return status;
     }
 
@@ -151,7 +156,7 @@ int extract(char *file_name) {
         goto cleanup;
         }
     
-    int name_len;
+    uint32_t name_len;
     fread(&name_len, sizeof(uint32_t), 1, compressed);
     char *original_file = malloc(name_len + 1);
     if (!original_file) {
@@ -172,17 +177,23 @@ int extract(char *file_name) {
             count--;
             }
         }
-    c = '\n';
-    fwrite(&c, sizeof(char), 1, extracted);
+    
+    status = SUCCESS;
+    
     cleanup:
         if (compressed) fclose(compressed);
         if (extracted) fclose(extracted);
         if (original_file) free(original_file);
-    status = SUCCESS;
+    
     return status;
     }
 
 int main(int argc, char **argv) {
+    if (argc < 3) {
+        printf("Program usage: %s <command> <file_name> \n", argv[0]);
+        return USER_ERROR;
+        }
+    
     int compress_file, view_file, extract_file;
     if (strcmp(argv[1], "compress") == 0) {
         compress_file = compress(argv[2]);
@@ -191,15 +202,16 @@ int main(int argc, char **argv) {
         }
 
     else if (strcmp(argv[1], "view") == 0) {
-        view_file = view(argv[2]);
-        if (view_file == SUCCESS) printf("Success! \n");
-        else printf("Failure! \n");        
+        view_file = view_encoding(argv[2]);
+        if (view_file != SUCCESS) printf("Failure! \n");
         }
+    
     else if (strcmp(argv[1], "extract") == 0) {
         printf("Extracting... \n");
         extract_file = extract(argv[2]);
         if (extract_file == SUCCESS) printf("Success! \n");
         else if (extract_file == SYSTEM_ERROR) printf("Failure! \n");
         }
+    
     return 0;
     }
