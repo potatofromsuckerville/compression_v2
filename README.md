@@ -1,3 +1,6 @@
+# Build:
+gcc -o compress.c compress
+
 # Program usage:
 ./compress <command> <file_name>
 
